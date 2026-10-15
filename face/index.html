@@ -1,0 +1,1590 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aria · Policy Assistant</title>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/",
+    "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.1.0/lib/three-vrm.module.min.js"
+  }
+}
+</script>
+<style>
+  :root {
+    --bg: #eef1f8;
+    --card: #ffffff;
+    --text: #1d2433;
+    --muted: #667085;
+    --accent: #3b82f6;
+    --accent-soft: #e3ecff;
+    --border: #e1e6f0;
+    --user-bubble: #3b5bdb;
+    --user-text: #ffffff;
+    --bot-bubble: #f1f4fa;
+    --danger: #e5484d;
+    --holo: #4fd1ff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #070a16;
+      --card: #10162a;
+      --text: #e8ebf4;
+      --muted: #98a2b8;
+      --accent: #6ea8ff;
+      --accent-soft: #1b2648;
+      --border: #222c4a;
+      --bot-bubble: #182039;
+    }
+  }
+  body.listening { --holo: #7cf7ff; }
+  body.thinking  { --holo: #b48cff; }
+  body.speaking  { --holo: #5ee0ff; }
+  body.concerned { --holo: #ff6b81; }
+  body.searching { --holo: #ffc86b; }
+  body.checking  { --holo: #6bffb0; }
+  body.remembering { --holo: #ff9be0; }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    height: 100dvh;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    padding: 16px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans Devanagari", Roboto, sans-serif;
+  }
+  .app { width: 100%; max-width: 720px; height: 100%; display: flex; flex-direction: column; gap: 12px; }
+  .stage { flex-shrink: 0; }
+  .avatar-wrap { width: min(360px, 34dvh) !important; }
+
+  /* The avatar sits on a dark "AI console" in both themes. */
+  .stage {
+    position: relative;
+    overflow: hidden;
+    border-radius: 24px;
+    padding: 16px 16px 18px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    color: #e8ecff;
+    background:
+      repeating-linear-gradient(0deg, rgba(79, 209, 255, .035) 0 1px, transparent 1px 28px),
+      repeating-linear-gradient(90deg, rgba(79, 209, 255, .035) 0 1px, transparent 1px 28px),
+      radial-gradient(circle at 50% 35%, #1a2760 0%, #0b1130 55%, #060918 100%);
+    border: 1px solid rgba(79, 209, 255, .22);
+    box-shadow: inset 0 0 60px rgba(79, 209, 255, .08);
+  }
+  .avatar-wrap { position: relative; width: 360px; max-width: 100%; aspect-ratio: 1 / 1; cursor: pointer; }
+  .ring {
+    position: absolute;
+    left: 50%;
+    top: 42%;
+    width: 86%;
+    aspect-ratio: 1;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    border: 1.5px dashed var(--holo);
+    opacity: .55;
+    box-shadow: 0 0 24px -6px var(--holo), inset 0 0 24px -10px var(--holo);
+    animation: spin 40s linear infinite;
+    transition: border-color .5s, box-shadow .5s;
+  }
+  .ring.outer { width: 96%; border-style: solid; border-width: 1px; opacity: .25; animation-duration: 70s; animation-direction: reverse; }
+  @keyframes spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
+  /* Faster rings while she is busy thinking */
+  body.thinking .ring, body.searching .ring, body.checking .ring, body.remembering .ring { animation-duration: 6s; opacity: .85; }
+  body.thinking .ring.outer, body.searching .ring.outer, body.checking .ring.outer, body.remembering .ring.outer { animation-duration: 9s; opacity: .45; }
+
+  /* Cartoon thought bubble near her head */
+  .bubble {
+    position: absolute; top: 4%; right: 0; width: 34%; aspect-ratio: 1.4;
+    pointer-events: none; opacity: 0; transform: scale(.5) translateY(20px); transform-origin: 0% 100%;
+    transition: opacity .35s, transform .35s cubic-bezier(.3, 1.6, .5, 1);
+  }
+  body.thinking .bubble, body.searching .bubble, body.checking .bubble, body.remembering .bubble {
+    opacity: 1; transform: scale(1) translateY(0); animation: float 2.4s ease-in-out infinite;
+  }
+  @keyframes float { 50% { translate: 0 -6px; } }
+  .bubble .cloud {
+    position: absolute; right: 4%; top: 0; width: 82%; height: 66%;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    background: rgba(255, 255, 255, .92); border-radius: 50%;
+    box-shadow: 0 0 22px -4px var(--holo);
+  }
+  .bubble .puff { position: absolute; border-radius: 50%; background: rgba(255, 255, 255, .92); box-shadow: 0 0 10px -2px var(--holo); }
+  .bubble .p1 { width: 14%; aspect-ratio: 1; left: 14%; bottom: 14%; }
+  .bubble .p2 { width: 8%; aspect-ratio: 1; left: 4%; bottom: 0; }
+  .bubble .dots { display: flex; gap: 8px; }
+  .bubble .dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--holo); filter: brightness(.75); animation: bounce 1s infinite; }
+  .bubble .dots i:nth-child(2) { animation-delay: .15s; }
+  .bubble .dots i:nth-child(3) { animation-delay: .3s; }
+  @keyframes bounce { 30% { transform: translateY(-5px); } 60% { transform: translateY(0); } }
+  #avatar {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    /* fade the shoulders softly into the console instead of a hard square edge */
+    -webkit-mask-image: radial-gradient(ellipse 60% 62% at 50% 44%, #000 64%, transparent 100%);
+    mask-image: radial-gradient(ellipse 60% 62% at 50% 44%, #000 64%, transparent 100%);
+  }
+  .overlay {
+    position: absolute;
+    inset: 12% 8%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #c9d4ff;
+    padding: 12px;
+    border-radius: 16px;
+  }
+  .overlay.drop { background: rgba(79, 209, 255, .12); outline: 2px dashed var(--holo); }
+
+  .wave { display: flex; align-items: center; gap: 3px; height: 28px; }
+  .wave span {
+    display: block;
+    width: 3px;
+    height: 3px;
+    border-radius: 3px;
+    background: var(--holo);
+    box-shadow: 0 0 6px var(--holo);
+    transition: background .5s;
+  }
+
+  .name { font-weight: 600; font-size: 20px; letter-spacing: .5px; }
+  .subtitle { font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: #8fa3d9; margin-top: -8px; }
+  .status {
+    font-size: 14px;
+    color: #c9d4ff;
+    background: rgba(255, 255, 255, .06);
+    border: 1px solid rgba(79, 209, 255, .22);
+    padding: 6px 14px;
+    border-radius: 999px;
+    text-align: center;
+  }
+  .langs { display: flex; gap: 6px; }
+  .langs button {
+    min-height: 34px;
+    padding: 0 14px;
+    font-size: 14px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .06);
+    color: #c9d4ff;
+    border: 1px solid rgba(79, 209, 255, .22);
+  }
+  .langs button.active { background: var(--holo); color: #061024; border-color: transparent; }
+
+  .chat {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--holo) 55%, transparent) transparent;
+  }
+  .chat::-webkit-scrollbar { width: 8px; }
+  .chat::-webkit-scrollbar-track { background: transparent; }
+  .chat::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--holo) 55%, transparent); border-radius: 8px; }
+  .empty { color: var(--muted); font-size: 14px; text-align: center; padding: 8px; }
+  .msg { max-width: 85%; padding: 10px 14px; border-radius: 16px; line-height: 1.6; font-size: 15px; overflow-wrap: anywhere; }
+  .msg.user { align-self: flex-end; background: var(--user-bubble); color: var(--user-text); border-bottom-right-radius: 4px; }
+  .msg.bot { align-self: flex-start; background: var(--bot-bubble); border-bottom-left-radius: 4px; }
+  .msg.bot.error { border: 1px solid var(--danger); }
+  .sources { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { font-size: 12px; background: var(--accent-soft); color: var(--accent); padding: 3px 10px; border-radius: 999px; }
+
+  .composer { display: flex; gap: 8px; }
+  .composer input {
+    flex: 1;
+    min-width: 0;
+    padding: 14px 16px;
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    font-size: 15px;
+  }
+  button {
+    border: none;
+    border-radius: 14px;
+    padding: 0 18px;
+    min-height: 48px;
+    font-size: 15px;
+    cursor: pointer;
+    background: var(--accent);
+    color: #fff;
+  }
+  button.secondary { background: var(--accent-soft); color: var(--accent); }
+  button.mic.on { background: var(--danger); color: #fff; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .hint { font-size: 12px; color: var(--muted); text-align: center; }
+  [hidden] { display: none !important; }
+  .msg a { color: var(--accent); word-break: break-all; }
+
+  /* Wide screens: Aria on the left, chat on the right — nothing but the chat scrolls. */
+  @media (min-width: 900px) {
+    .app {
+      max-width: 1200px;
+      display: grid;
+      grid-template-columns: minmax(380px, 460px) 1fr;
+      grid-template-rows: 1fr auto auto;
+      gap: 16px;
+    }
+    .stage { grid-column: 1; grid-row: 1 / -1; justify-content: center; }
+    .avatar-wrap { width: min(400px, 52dvh) !important; }
+    .chat { grid-column: 2; grid-row: 1; }
+    #nameForm, #form { grid-column: 2; grid-row: 2; }
+    .hint { grid-column: 2; grid-row: 3; }
+  }
+  .hint a { color: var(--accent); }
+</style>
+</head>
+<body class="idle">
+<main class="app">
+  <section class="stage">
+    <div class="avatar-wrap" id="face" title="Click to stop speaking">
+      <div class="ring outer"></div>
+      <div class="ring"></div>
+      <canvas id="avatar"></canvas>
+      <div class="bubble" aria-hidden="true">
+        <span class="puff p1"></span><span class="puff p2"></span>
+        <div class="cloud"><span class="dots"><i></i><i></i><i></i></span></div>
+      </div>
+      <div class="overlay" id="overlay">Loading Aria…</div>
+    </div>
+    <div class="wave" id="wave" aria-hidden="true"></div>
+    <div class="name">Aria</div>
+    <div class="subtitle">AI Policy Assistant</div>
+    <div class="status" id="status">Ask me anything about company policies</div>
+    <div class="langs" role="group" aria-label="Voice language">
+      <button type="button" data-lang="en-IN" class="active">English</button>
+      <button type="button" data-lang="hi-IN">हिन्दी</button>
+    </div>
+  </section>
+
+  <section class="chat" id="chat" aria-live="polite">
+    <div class="empty" id="empty">Try: "How many days can I work from home?" · "मैं कितने दिन घर से काम कर सकता हूँ?"</div>
+  </section>
+
+  <form class="composer" id="nameForm">
+    <input id="nameInput" placeholder="What's your name?" autocomplete="name" maxlength="40">
+    <button type="submit">Start</button>
+  </form>
+  <form class="composer" id="form" hidden>
+    <input id="input" placeholder="Type your question…" autocomplete="off">
+    <button type="button" class="secondary mic" id="mic" title="Ask by voice">🎤</button>
+    <button type="submit" id="send">Ask</button>
+  </form>
+  <div class="hint"><span id="hint">🎤 Always listening, just speak · click 🎤 to mute · click Aria to stop her speaking</span> <a href="#" id="switchUser" hidden>Not you?</a></div>
+</main>
+
+<script type="module">
+  import * as THREE from "three";
+  import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+  import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+  import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
+
+  const $ = (id) => document.getElementById(id);
+  const TEXTS = {
+    "en-IN": { idle: "Ask me anything about company policies", placeholder: "Type your question…" },
+    "hi-IN": { idle: "कंपनी की नीतियों के बारे में कुछ भी पूछें", placeholder: "अपना सवाल लिखें…" },
+  };
+
+  let sessionId = null;
+  let busy = false;
+  let mood = "idle";
+  let faceOverride = null; // test hook: freeze exact face shapes
+  let micLang = "en-IN";
+  const idleText = () => TEXTS[micLang].idle;
+  const escapeHtml = (s) =>
+    s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const isHindi = (text) => /[ऀ-ॿ]/.test(text);
+
+  // ================= scene =================
+  const canvas = $("avatar");
+  const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(22, 4 / 5, 0.05, 20);
+  camera.position.set(0, 1.5, 1.4);
+  const lookTarget = new THREE.Object3D();
+  scene.add(lookTarget);
+  const lights = new THREE.Group();
+  scene.add(lights);
+
+  function useStudioLighting() {
+    // Soft, warm "beauty" portrait light: big frontal key, gentle fill, cool rim.
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 0.8;
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    scene.environmentIntensity = 0.45;
+    // Key light from the side and above so cheeks, nose and brows get soft shadows (muscles read better).
+    const key = new THREE.DirectionalLight(0xffe6d2, 1.5);
+    key.position.set(1.0, 1.9, 1.6);
+    const fill = new THREE.DirectionalLight(0xe8f0ff, 0.45);
+    fill.position.set(-0.8, 1.3, 1.8);
+    const rim = new THREE.DirectionalLight(0x8fe0ff, 1.3);
+    rim.position.set(-0.6, 2.0, -1.4);
+    lights.add(key, fill, rim);
+  }
+
+  function useToonLighting() {
+    renderer.toneMapping = THREE.NoToneMapping;
+    scene.environment = null;
+    const key = new THREE.DirectionalLight(0xfff4ec, 1.25);
+    key.position.set(0.5, 1.5, 1.6);
+    const rim = new THREE.DirectionalLight(0x7fdcff, 0.7);
+    rim.position.set(-1.2, 1.6, -1);
+    lights.add(key, rim, new THREE.AmbientLight(0xffffff, 0.25));
+  }
+
+  function resize() {
+    const { clientWidth: w, clientHeight: h } = canvas;
+    if (!w || !h) return;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  new ResizeObserver(resize).observe(canvas);
+  resize();
+
+  // ================= expressions (ARKit face muscles) =================
+  const EXPRESSIONS = {
+    smile:     { HB_07_MouthSmile: 0.45, AU_06_CheekRaiser: 0.3, mouthSmileLeft: 0.5, mouthSmileRight: 0.5, cheekSquintLeft: 0.3, cheekSquintRight: 0.3, eyeSquintLeft: 0.2, eyeSquintRight: 0.2, mouthDimpleLeft: 0.2, mouthDimpleRight: 0.2 },
+    bigSmile:  { HB_07_MouthSmile: 0.8, AU_12_LipCornerPuller: 0.35, AU_06_CheekRaiser: 0.6, mouthSmileLeft: 0.9, mouthSmileRight: 0.9, cheekSquintLeft: 0.6, cheekSquintRight: 0.6, eyeSquintLeft: 0.45, eyeSquintRight: 0.45, mouthUpperUpLeft: 0.2, mouthUpperUpRight: 0.2, jawOpen: 0.08, browInnerUp: 0.1 },
+    laugh:     { HB_07_MouthSmile: 1, AU_06_CheekRaiser: 0.8, AU_25_LipsPart: 0.3, mouthSmileLeft: 1, mouthSmileRight: 1, cheekSquintLeft: 0.8, cheekSquintRight: 0.8, eyeSquintLeft: 0.7, eyeSquintRight: 0.7, jawOpen: 0.3, mouthUpperUpLeft: 0.35, mouthUpperUpRight: 0.35, browInnerUp: 0.2 },
+    thinking:  { browOuterUpLeft: 0.55, browDownRight: 0.35, mouthPressLeft: 0.4, mouthLeft: 0.18, eyeSquintRight: 0.25, mouthRollLower: 0.15 },
+    confused:  { browInnerUp: 0.45, browDownLeft: 0.5, browOuterUpRight: 0.35, mouthLeft: 0.22, mouthPressRight: 0.35, mouthFrownLeft: 0.15, eyeSquintLeft: 0.25 },
+    curious:   { HB_07_MouthSmile: 0.3, browOuterUpLeft: 0.4, browOuterUpRight: 0.4, browInnerUp: 0.2, eyeWideLeft: 0.2, eyeWideRight: 0.2, mouthSmileLeft: 0.25, mouthSmileRight: 0.25 },
+    surprised: { eyeWideLeft: 0.65, eyeWideRight: 0.65, browInnerUp: 0.65, browOuterUpLeft: 0.6, browOuterUpRight: 0.6, jawOpen: 0.22, mouthFunnel: 0.15 },
+    sad:       { browInnerUp: 0.75, mouthFrownLeft: 0.55, mouthFrownRight: 0.55, mouthPucker: 0.1, eyeSquintLeft: 0.1, eyeSquintRight: 0.1, mouthShrugLower: 0.2 },
+    worried:   { browInnerUp: 0.65, mouthStretchLeft: 0.2, mouthStretchRight: 0.2, mouthPressLeft: 0.2, mouthPressRight: 0.2, eyeWideLeft: 0.15, eyeWideRight: 0.15 },
+    empathy:   { HB_07_MouthSmile: 0.25, browInnerUp: 0.5, mouthSmileLeft: 0.25, mouthSmileRight: 0.25, eyeSquintLeft: 0.1, eyeSquintRight: 0.1 },
+    serious:   { browDownLeft: 0.35, browDownRight: 0.35, mouthPressLeft: 0.25, mouthPressRight: 0.25 },
+    confident: { HB_07_MouthSmile: 0.35, SR_35_Mouth_Smile_Right: 0.4, mouthSmileLeft: 0.35, mouthSmileRight: 0.45, cheekSquintRight: 0.2, browOuterUpLeft: 0.15, mouthDimpleRight: 0.25 },
+    annoyed:   { browDownLeft: 0.6, browDownRight: 0.6, noseSneerLeft: 0.3, noseSneerRight: 0.3, mouthPressLeft: 0.35, mouthPressRight: 0.35 },
+    disgust:   { noseSneerLeft: 0.55, noseSneerRight: 0.55, mouthUpperUpLeft: 0.35, mouthUpperUpRight: 0.35, browDownLeft: 0.3, browDownRight: 0.3 },
+    remembering:  { browOuterUpLeft: 0.4, browInnerUp: 0.2, eyeSquintLeft: 0.2, eyeSquintRight: 0.15, mouthPressLeft: 0.3, mouthPressRight: 0.3, mouthRollLower: 0.1 },
+    focused:      { browDownLeft: 0.3, browDownRight: 0.3, eyeSquintLeft: 0.3, eyeSquintRight: 0.3, mouthPressLeft: 0.15, mouthPressRight: 0.15 },
+    enthusiastic: { mouthSmileLeft: 0.8, mouthSmileRight: 0.8, cheekSquintLeft: 0.5, cheekSquintRight: 0.5, browInnerUp: 0.35, browOuterUpLeft: 0.4, browOuterUpRight: 0.4, eyeWideLeft: 0.2, eyeWideRight: 0.2 },
+  };
+  const EXPR_NAMES = Object.keys(EXPRESSIONS);
+  const exprNow = Object.fromEntries(EXPR_NAMES.map((n) => [n, 0]));
+  let exprTarget = { smile: 0.8 };
+  let exprHoldUntil = 0;
+
+  // Head pose (radians, world axes: x = nod down, y = turn to viewer's right, z = tilt) per expression.
+  const EXPR_HEAD = {
+    thinking: { x: -0.07, y: 0.1, z: -0.07 }, confused: { x: 0.0, y: -0.05, z: 0.12 }, curious: { x: -0.02, y: 0, z: 0.08 },
+    surprised: { x: -0.05, y: 0, z: 0 }, sad: { x: 0.08, y: 0, z: 0.04 }, worried: { x: 0.03, y: 0, z: 0.05 },
+    empathy: { x: 0.03, y: 0, z: 0.08 }, confident: { x: -0.04, y: 0, z: -0.03 }, laugh: { x: -0.06, y: 0, z: 0.03 },
+    remembering: { x: -0.06, y: -0.1, z: 0.05 }, focused: { x: 0.03, y: 0, z: 0 }, enthusiastic: { x: -0.04, y: 0, z: 0.02 },
+  };
+
+  function setExpression(map, holdMs = 0) {
+    exprTarget = map;
+    exprHoldUntil = holdMs ? performance.now() + holdMs : 0;
+  }
+
+  // ================= gestures (arm directions in world space; +x = her left) =================
+  // Each side: upper-arm and forearm directions, finger curl (0 open .. 1 fist), index pointing, shoulder lift.
+  const side = (upper, fore, curl = 0.35, extra = {}) => ({ upper, fore, curl, ...extra });
+  const mirror = (s) => ({ ...s, upper: [-s.upper[0], s.upper[1], s.upper[2]], fore: [-s.fore[0], s.fore[1], s.fore[2]] });
+  const REST = side([0.2, -1, 0.08], [0.1, -1, 0.3], 0.35);
+  const GESTURES = {
+    rest: () => ({ L: REST, R: mirror(REST) }),
+    // both hands in front of the chest, moving with the rhythm of speech
+    explain: (t) => {
+      const beat = Math.sin(t * 4.2) * 0.14;
+      return {
+        L: side([0.12, -1, 0.45], [-0.25, 0.6 + beat, 0.75], 0.15),
+        R: mirror(side([0.12, -1, 0.45], [-0.25, 0.6 - beat, 0.75], 0.15)),
+      };
+    },
+    explainOne: (t) => ({
+      L: REST,
+      R: mirror(side([0.12, -1, 0.45], [-0.2, 0.65 + Math.sin(t * 4) * 0.14, 0.75], 0.1)),
+    }),
+    wave: (t) => ({
+      L: REST,
+      R: mirror(side([0.15, -0.8, 0.5], [-0.15 + Math.sin(t * 9) * 0.3, 1, 0.15], 0.05)),
+    }),
+    thinking: () => ({
+      L: side([0.12, -1, 0.35], [-0.45, 0.25, 1], 0.5),
+      R: mirror(side([0.05, -0.6, 0.8], [-0.6, 0.9, -0.4], 0.55)),
+    }),
+    shrug: () => {
+      const s = side([0.15, -1, 0.3], [0.18, 0.3, 0.95], 0.05, { shoulder: 0.12 });
+      return { L: s, R: mirror(s) };
+    },
+    count: () => ({
+      L: REST,
+      R: mirror(side([0.1, -1, 0.5], [-0.2, 0.95, 0.35], 0.95, { point: true })),
+    }),
+    heart: () => {
+      const s = side([0.15, -1, 0.35], [-0.6, 0.55, 0.6], 0.3);
+      return { L: s, R: mirror(s) };
+    },
+  };
+  let gestureName = "rest";
+  let gestureUntil = 0;
+  let gestureAfter = "rest";
+  function setGesture(name, ms = 0, after = "rest") {
+    gestureName = name;
+    gestureUntil = ms ? performance.now() + ms : 0;
+    gestureAfter = after;
+  }
+
+  // ================= avatar rigs =================
+  let rig = null;
+
+  function glbRig(root) {
+    const meshes = [];
+    root.traverse((o) => {
+      o.frustumCulled = false;
+      if (o.isMesh && o.morphTargetDictionary) meshes.push(o);
+      // smoother, softer skin
+      if (o.isMesh && /teeth/i.test(o.material?.name || "")) {
+        o.material.color.setScalar(1.15); // clean teeth, not glowing
+        o.material.roughness = 0.35;
+      }
+      if (o.isMesh && /tongue/i.test(o.material?.name || "")) {
+        o.visible = false; // this model's tongue rises and fills the open mouth
+      }
+      if (o.isMesh && /\.body$/i.test(o.material?.name || "")) {
+        o.material.roughness = 0.62; // MPFB skin: soft, not shiny
+        o.material.metalness = 0;
+      }
+      if (o.isMesh && /head/i.test(o.material?.name || "") && o.material.normalScale) {
+        o.material.normalScale.set(0.35, 0.35);
+        o.material.roughness = Math.max(o.material.roughness ?? 0, 0.62); // soft skin, no oily shine
+      }
+      // hair and lashes: soft alpha edges instead of hard cut-out strands
+      if (o.isMesh && /opacity|hair|lash/i.test(o.material?.name || "")) {
+        o.material.alphaTest = 0.3;
+        o.material.transparent = true;
+        o.material.depthWrite = false;
+        o.renderOrder = 2;
+      }
+    });
+    const hasExtraShapes = meshes.some((m) => "HB_07_MouthSmile" in m.morphTargetDictionary);
+    let talkLevel = 0; // 0 = quiet, 1 = talking (smoothed, so the smile doesn't flicker between sounds)
+    const managed = new Set();
+    const setMorph = (name, value) => {
+      for (const mesh of meshes) {
+        const i = mesh.morphTargetDictionary[name];
+        if (i !== undefined) mesh.morphTargetInfluences[i] = value;
+      }
+    };
+
+    // Find bones by name pattern so different rigs work (Mixamo, Rocketbox "Bip01 ...", MPFB).
+    const all = [];
+    root.traverse((o) => { if (o.isBone || /bip|spine|neck|head|eye|arm|hand|finger|clavicle|shoulder/i.test(o.name)) all.push(o); });
+    const find = (re, not = /nub|end|blink|brow|top|bottom/i) => all.find((b) => re.test(b.name) && !not.test(b.name));
+    const sideBones = (L) => {
+      const s = L ? "(^|[^a-z])(l|left)" : "(^|[^a-z])(r|right)";
+      return {
+        clav: find(new RegExp(`${s}_?(clavicle|shoulder)$`, "i")),
+        upper: find(new RegExp(`${s}_?(upperarm|arm)$`, "i")),
+        fore: find(new RegExp(`${s}_?(forearm|lowerarm)$`, "i")),
+        hand: find(new RegExp(`${s}_?hand$`, "i")),
+        fingers: all.filter((b) => new RegExp(`${s}_?(finger|hand)(thumb|index|middle|ring|pinky)?\\d*$`, "i").test(b.name) && !/hand$/i.test(b.name)),
+        index: all.filter((b) => new RegExp(`${s}_?(finger1\\d*|handindex\\d)$`, "i").test(b.name)),
+      };
+    };
+    const B = {
+      head: find(/(^|[^a-z])head$/i),
+      neck: find(/neck$/i),
+      spine: find(/spine2$/i) || find(/spine1$/i),
+      leye: find(/(^|[^a-z])(l|left)_?eye$/i),
+      reye: find(/(^|[^a-z])(r|right)_?eye$/i),
+      L: sideBones(true),
+      R: sideBones(false),
+    };
+
+    // Real-world size: some exports are in centimetres.
+    let box = new THREE.Box3().setFromObject(root);
+    const height = box.max.y - box.min.y;
+    if (height > 3) root.scale.setScalar(1.7 / height);
+    // Face the camera (+Z): use the eyes to find which way the head points.
+    root.updateMatrixWorld(true);
+    if (B.head && B.leye && B.reye) {
+      const head = B.head.getWorldPosition(new THREE.Vector3());
+      const eyes = B.leye.getWorldPosition(new THREE.Vector3()).add(B.reye.getWorldPosition(new THREE.Vector3())).multiplyScalar(0.5);
+      if (eyes.z - head.z < 0) root.rotation.y += Math.PI;
+    }
+    root.updateMatrixWorld(true);
+    box = new THREE.Box3().setFromObject(root);
+    const top = box.max.y;
+
+    // Rocketbox only: remove stray hair strands lying across the forehead (between brows and hairline).
+    if (hasExtraShapes && B.leye && B.reye) {
+      const le = B.leye.getWorldPosition(new THREE.Vector3());
+      const re = B.reye.getWorldPosition(new THREE.Vector3());
+      const eyeY = (le.y + re.y) / 2;
+      const eyeZ = (le.z + re.z) / 2;
+      const v = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+      root.traverse((o) => {
+        if (!o.isMesh || !/opacity|hair/i.test(o.material?.name || "") || !o.geometry.index) return;
+        const pos = o.geometry.attributes.position;
+        const idx = o.geometry.index.array;
+        const keep = [];
+        for (let i = 0; i < idx.length; i += 3) {
+          for (let k = 0; k < 3; k++) v[k].fromBufferAttribute(pos, idx[i + k]).applyMatrix4(o.matrixWorld);
+          const cx = (v[0].x + v[1].x + v[2].x) / 3, cy = (v[0].y + v[1].y + v[2].y) / 3, cz = (v[0].z + v[1].z + v[2].z) / 3;
+          const onForehead = cy > eyeY + 0.011 && cy < eyeY + 0.1 && Math.abs(cx) < 0.065 && cz > eyeZ - 0.02;
+          if (!onForehead) keep.push(idx[i], idx[i + 1], idx[i + 2]);
+        }
+        if (keep.length < idx.length) o.geometry.setIndex(keep);
+      });
+    }
+
+    // Shade the inside of the mouth: the deeper a skin vertex sits behind the lips, the darker it gets.
+    if (B.leye && B.reye) {
+      const eyeY = (B.leye.getWorldPosition(new THREE.Vector3()).y + B.reye.getWorldPosition(new THREE.Vector3()).y) / 2;
+      root.traverse((o) => {
+        if (!o.isMesh || !/\.body$|_head$/i.test(o.material?.name || "")) return;
+        const pos = o.geometry.attributes.position;
+        const world = [];
+        const p = new THREE.Vector3();
+        for (let i = 0; i < pos.count; i++) {
+          p.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+          if (Math.abs(p.x) < 0.032 && p.y < eyeY - 0.06 && p.y > eyeY - 0.13) world.push([i, p.x, p.y, p.z]);
+        }
+        // front of the face for each small x/y cell = where the lips/skin surface is
+        const cell = (x, y) => `${Math.round(x / 0.008)},${Math.round(y / 0.005)}`;
+        const front = new Map();
+        for (const [, x, y, z] of world) front.set(cell(x, y), Math.max(front.get(cell(x, y)) ?? -Infinity, z));
+        const colors = new Float32Array(pos.count * 3).fill(1);
+        let shaded = 0;
+        for (const [i, x, y, z] of world) {
+          const depth = front.get(cell(x, y)) - z;
+          const dark = Math.min(1, Math.max(0, (depth - 0.004) / 0.012));
+          if (dark <= 0) continue;
+          const shade = 1 - 0.85 * dark;
+          colors[i * 3] = shade;
+          colors[i * 3 + 1] = shade * 0.9;
+          colors[i * 3 + 2] = shade * 0.9;
+          shaded++;
+        }
+        if (shaded) {
+          o.geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+          o.material.vertexColors = true;
+          o.material.needsUpdate = true;
+        }
+      });
+    }
+
+    const rest = new Map();
+    root.traverse((o) => rest.set(o, o.quaternion.clone()));
+
+    // --- bone helpers (always relative to the parent's *current* pose) ---
+    const qa = new THREE.Quaternion(), qb = new THREE.Quaternion(), qd = new THREE.Quaternion();
+    const va = new THREE.Vector3(), vb = new THREE.Vector3(), vd = new THREE.Vector3();
+    const eul = new THREE.Euler();
+    function applyWorldDelta(bone, delta) {
+      bone.parent.getWorldQuaternion(qa);
+      qb.copy(qa).invert().multiply(delta).multiply(qa).multiply(rest.get(bone));
+      bone.quaternion.copy(qb);
+      bone.updateMatrixWorld(true);
+    }
+    function turn(bone, x, y, z) {
+      if (!bone) return;
+      applyWorldDelta(bone, qd.setFromEuler(eul.set(x, y, z)));
+    }
+    // Point a bone (from its joint to its child joint) along a world direction.
+    function aim(bone, child, dir) {
+      if (!bone || !child) return;
+      bone.quaternion.copy(rest.get(bone));
+      bone.updateMatrixWorld(true);
+      bone.getWorldPosition(va);
+      child.getWorldPosition(vb);
+      vb.sub(va).normalize();
+      vd.set(dir[0], dir[1], dir[2]).normalize();
+      applyWorldDelta(bone, qd.setFromUnitVectors(vb, vd));
+    }
+    function curlFingers(bones, amount, axis = "z") {
+      for (const f of bones) {
+        f.quaternion.copy(rest.get(f));
+        eul.set(0, 0, 0);
+        eul[axis] = -amount * 0.9;
+        f.quaternion.multiply(qd.setFromEuler(eul));
+      }
+    }
+
+    // Smoothly blended arm directions.
+    const armNow = {
+      L: { upper: new THREE.Vector3(0.2, -1, 0.08), fore: new THREE.Vector3(0.1, -1, 0.3), curl: 0.35, shoulder: 0, point: 0 },
+      R: { upper: new THREE.Vector3(-0.2, -1, 0.08), fore: new THREE.Vector3(-0.1, -1, 0.3), curl: 0.35, shoulder: 0, point: 0 },
+    };
+
+    return {
+      gestures: true,
+      info() {
+        const dir = (a, b) => (a && b ? b.getWorldPosition(new THREE.Vector3()).sub(a.getWorldPosition(new THREE.Vector3())).normalize().toArray().map((x) => +x.toFixed(2)) : null);
+        const n = (b) => b?.name || null;
+        return {
+          L: { clav: n(B.L.clav), upper: n(B.L.upper), fore: n(B.L.fore), hand: n(B.L.hand), fingers: B.L.fingers.length, upperDir: dir(B.L.upper, B.L.fore), lPos: B.L.upper?.getWorldPosition(new THREE.Vector3()).toArray().map((x) => +x.toFixed(2)) },
+          R: { upper: n(B.R.upper), fore: n(B.R.fore), upperDir: dir(B.R.upper, B.R.fore) },
+          head: n(B.head), neck: n(B.neck), spine: n(B.spine),
+          armBones: all.filter((b) => /arm|clav/i.test(b.name)).map((b) => b.name),
+        };
+      },
+      frame() {
+        // Face-only close-up centred just below the eyes.
+        const eyes = B.leye && B.reye
+          ? B.leye.getWorldPosition(new THREE.Vector3()).add(B.reye.getWorldPosition(new THREE.Vector3())).multiplyScalar(0.5)
+          : new THREE.Vector3(0, top - 0.12, 0);
+        camera.position.set(0, eyes.y, eyes.z + 1.0);
+        camera.lookAt(0, eyes.y - 0.02, eyes.z);
+      },
+      apply(s) {
+        // ----- face -----
+        const m = { ...s.face };
+        const add = (k, v) => { m[k] = (m[k] || 0) + v; };
+        add("eyeBlinkLeft", s.blink);
+        add("eyeBlinkRight", s.blink);
+        const gx = Math.max(-1, Math.min(1, s.gaze.x * 2));
+        const gy = Math.max(-1, Math.min(1, s.gaze.y * 2.5));
+        add(gx > 0 ? "eyeLookOutLeft" : "eyeLookInLeft", Math.abs(gx) * 0.6);
+        add(gx > 0 ? "eyeLookInRight" : "eyeLookOutRight", Math.abs(gx) * 0.6);
+        add(gy > 0 ? "eyeLookUpLeft" : "eyeLookDownLeft", Math.abs(gy) * 0.6);
+        add(gy > 0 ? "eyeLookUpRight" : "eyeLookDownRight", Math.abs(gy) * 0.6);
+        // Models without Rocketbox's extra smile shapes need stronger ARKit muscles to read clearly.
+        if (!hasExtraShapes) {
+          const v = (k) => s.face[k] || 0;
+          for (const k of Object.keys(m)) {
+            if (k.startsWith("viseme_")) m[k] *= 1.1;
+            else if (/^mouthSmile/.test(k)) m[k] *= 1.0;
+            else if (!/^eye(Blink|Look)/.test(k)) m[k] *= 1.6;
+          }
+          // let the jaw drop on open vowels, like a real speaker
+          add("jawOpen", 0.2 * (v("viseme_aa") + v("viseme_O") * 0.7 + v("viseme_E") * 0.45 + v("viseme_U") * 0.3 + v("viseme_I") * 0.3));
+          // while talking: lower lip stays up over the bottom teeth, round lips on o/u, a softer smile (no side teeth)
+          const talk = Object.keys(s.face).reduce((sum, k) => sum + (k.startsWith("viseme_") ? s.face[k] : 0), 0);
+          talkLevel += ((talk > 0.02 ? 1 : 0) - talkLevel) * (talk > 0.02 ? 0.15 : 0.03);
+          add("mouthShrugLower", talkLevel * Math.min(0.22, talk * 0.5 + 0.08));
+          add("mouthPucker", 0.5 * (v("viseme_O") + v("viseme_U")));
+          for (const k of ["mouthSmileLeft", "mouthSmileRight", "mouthUpperUpLeft", "mouthUpperUpRight", "mouthDimpleLeft", "mouthDimpleRight"]) {
+            if (m[k]) m[k] *= 1 - 0.65 * talkLevel;
+          }
+        }
+        for (const k of Object.keys(m)) managed.add(k);
+        for (const k of managed) setMorph(k, Math.min(1, Math.max(0, m[k] || 0)));
+
+        // ----- body: spine, neck, head -----
+        turn(B.spine, s.breath * 0.012, 0, 0);
+        turn(B.neck, s.head.x * 0.4, s.head.y * 0.4, s.head.z * 0.4);
+        turn(B.head, s.head.x * 0.6, s.head.y * 0.6, s.head.z * 0.6);
+
+        // ----- arms and hands -----
+        for (const key of ["L", "R"]) {
+          const goal = s.arms[key];
+          const now = armNow[key];
+          now.upper.lerp(vd.set(...goal.upper).normalize(), 0.09);
+          now.fore.lerp(vd.set(...goal.fore).normalize(), 0.09);
+          now.curl += ((goal.curl ?? 0.35) - now.curl) * 0.1;
+          now.shoulder += ((goal.shoulder || 0) - now.shoulder) * 0.1;
+          now.point += ((goal.point ? 1 : 0) - now.point) * 0.1;
+          const b = B[key];
+          const sign = key === "L" ? 1 : -1;
+          turn(b.clav, 0, 0, sign * now.shoulder);
+          aim(b.upper, b.fore, now.upper.toArray());
+          aim(b.fore, b.hand, now.fore.toArray());
+          curlFingers(b.fingers, now.curl);
+          if (now.point > 0.01) curlFingers(b.index, now.curl * (1 - now.point));
+        }
+      },
+      update() {},
+    };
+  }
+
+  // Anime VRM fallback: map the same face state onto VRM presets.
+  const OCULUS_TO_VRM = {
+    viseme_aa: { aa: 1 }, viseme_E: { ee: 0.85 }, viseme_I: { ih: 0.9 }, viseme_O: { oh: 0.9 }, viseme_U: { ou: 0.9 },
+    viseme_PP: {}, viseme_FF: { ih: 0.25 }, viseme_DD: { aa: 0.3, ih: 0.25 }, viseme_nn: { aa: 0.25, ih: 0.2 },
+    viseme_SS: { ih: 0.4 }, viseme_RR: { ou: 0.35 }, viseme_CH: { ou: 0.3, ih: 0.2 }, viseme_TH: { aa: 0.2, ih: 0.2 },
+    viseme_kk: { aa: 0.25, ee: 0.2 },
+  };
+  const ARM_DOWN = 1.2;
+
+  function vrmRig(vrm) {
+    VRMUtils.rotateVRM0(vrm);
+    vrm.scene.traverse((o) => { o.frustumCulled = false; });
+    const bone = (n) => vrm.humanoid.getNormalizedBoneNode(n);
+    bone("leftUpperArm")?.rotation.set(0, 0, -ARM_DOWN);
+    bone("rightUpperArm")?.rotation.set(0, 0, ARM_DOWN);
+    bone("leftLowerArm")?.rotation.set(0, 0, -0.15);
+    bone("rightLowerArm")?.rotation.set(0, 0, 0.15);
+    if (vrm.lookAt) {
+      vrm.lookAt.target = lookTarget;
+      vrm.lookAt.autoUpdate = true;
+    }
+    return {
+      gestures: false,
+      frame() {
+        vrm.update(0);
+        vrm.scene.updateMatrixWorld(true);
+        const head = vrm.humanoid.getRawBoneNode("head");
+        const y = head ? head.getWorldPosition(new THREE.Vector3()).y : 1.4;
+        camera.position.set(0, y + 0.07, 0.85);
+        camera.lookAt(0, y + 0.05, 0);
+      },
+      apply(s) {
+        const vowels = { aa: 0, ih: 0, ou: 0, ee: 0, oh: 0 };
+        for (const [k, w] of Object.entries(s.mouth)) {
+          for (const [v, x] of Object.entries(OCULUS_TO_VRM[k] || {})) vowels[v] += w * x;
+        }
+        const e = s.expr;
+        const em = vrm.expressionManager;
+        if (em) {
+          for (const [v, x] of Object.entries(vowels)) em.setValue(v, Math.min(1, x));
+          em.setValue("blink", s.blink);
+          const happy = e.bigSmile * 0.75 + e.laugh + e.confident * 0.25 + e.enthusiastic * 0.8;
+          const relaxed = e.smile * 0.75 + e.empathy * 0.35 + e.curious * 0.3 + e.confident * 0.35;
+          const sad = e.sad * 0.85 + e.empathy * 0.3 + e.worried * 0.45 + e.confused * 0.15;
+          const surprised = e.surprised * 0.85 + e.curious * 0.25 + e.confused * 0.25 + e.thinking * 0.12 + e.worried * 0.15;
+          const angry = e.annoyed * 0.55 + e.serious * 0.18 + e.disgust * 0.35 + e.thinking * 0.08 + e.focused * 0.15;
+          em.setValue("happy", Math.min(1, happy));
+          em.setValue("relaxed", Math.min(1, relaxed * (1 - Math.min(1, happy))));
+          em.setValue("sad", Math.min(1, sad));
+          em.setValue("surprised", Math.min(1, surprised));
+          em.setValue("angry", Math.min(1, angry));
+        }
+        bone("neck")?.rotation.set(s.head.x * 0.4, s.head.y * 0.4, s.head.z * 0.4);
+        bone("head")?.rotation.set(s.head.x * 0.6, s.head.y * 0.6, s.head.z * 0.6);
+        (bone("chest") || bone("spine"))?.rotation.set(s.breath * 0.012, 0, 0);
+        lookTarget.position.set(camera.position.x + s.gaze.x, camera.position.y + s.gaze.y, camera.position.z);
+      },
+      update(dt) { vrm.update(dt); },
+    };
+  }
+
+  const loader = new GLTFLoader();
+  loader.register((parser) => new VRMLoaderPlugin(parser));
+  let currentRoot = null;
+
+  function showOverlay(html) {
+    $("overlay").innerHTML = `<div>${html}</div>`;
+    $("overlay").style.display = "flex";
+  }
+
+  function loadAvatar(urls) {
+    const [url, ...rest] = urls;
+    showOverlay("Loading Aria…");
+    loader.load(
+      url,
+      (gltf) => {
+        if (currentRoot) {
+          scene.remove(currentRoot);
+          VRMUtils.deepDispose(currentRoot);
+        }
+        lights.clear();
+        const vrm = gltf.userData.vrm;
+        if (vrm) {
+          VRMUtils.removeUnnecessaryVertices(gltf.scene);
+          if (VRMUtils.combineSkeletons) VRMUtils.combineSkeletons(gltf.scene);
+          useToonLighting();
+          rig = vrmRig(vrm);
+          currentRoot = vrm.scene;
+        } else {
+          useStudioLighting();
+          rig = glbRig(gltf.scene);
+          currentRoot = gltf.scene;
+        }
+        scene.add(currentRoot);
+        rig.frame();
+        $("overlay").style.display = "none";
+        greet();
+      },
+      undefined,
+      (err) => {
+        const message = String(err?.message || err);
+        if (rest.length && /404|not found/i.test(message)) {
+          loadAvatar(rest);
+          return;
+        }
+        console.error("Avatar failed to load:", err);
+        showOverlay(
+          /404|not found/i.test(message)
+            ? "No avatar found.<br>Put a model at <b>face/avatar.glb</b> or <b>face/avatar.vrm</b>,<br>or drop a <b>.glb</b> / <b>.vrm</b> file here."
+            : `Couldn't show the avatar:<br><small>${escapeHtml(message)}</small>`,
+        );
+      },
+    );
+  }
+  loadAvatar(["/avatar.glb", "/avatar.vrm"]);
+
+  // A friendly hello wave + big smile when she appears.
+  function greet() {
+    setExpression({ bigSmile: 1 }, 2200);
+  }
+
+  // Drag and drop a .glb or .vrm file onto the avatar to try another model.
+  const wrap = $("face");
+  wrap.addEventListener("dragover", (e) => { e.preventDefault(); $("overlay").classList.add("drop"); });
+  wrap.addEventListener("dragleave", () => $("overlay").classList.remove("drop"));
+  wrap.addEventListener("drop", (e) => {
+    e.preventDefault();
+    $("overlay").classList.remove("drop");
+    const file = e.dataTransfer.files[0];
+    if (file && /\.(glb|vrm)$/i.test(file.name)) loadAvatar([URL.createObjectURL(file)]);
+  });
+
+  // ================= visemes: mouth shapes from the letters being spoken =================
+  const VISEME_OF = {
+    A: "viseme_aa", E: "viseme_E", I: "viseme_I", O: "viseme_O", U: "viseme_U",
+    PP: "viseme_PP", FF: "viseme_FF", TH: "viseme_TH", DD: "viseme_DD", NN: "viseme_nn",
+    SS: "viseme_SS", RR: "viseme_RR", CH: "viseme_CH", KK: "viseme_kk",
+  };
+  // Real speech rarely reaches full shapes; low E / I keeps the teeth from pushing forward.
+  const VISEME_GAIN = {
+    A: 0.62, E: 0.42, I: 0.38, O: 0.55, U: 0.5,
+    PP: 0.75, FF: 0.5, TH: 0.4, DD: 0.38, NN: 0.35, SS: 0.38, RR: 0.4, CH: 0.45, KK: 0.35,
+  };
+  const DEV = {
+    labial: "पफबभम", v: "वफ़", a: "अआा", i: "इईिीयऋृ", u: "उऊुू", e: "एऐेै", o: "ओऔोौ", nasal: "ंँ",
+    dd: "तथदधटठडढड़ढ़", nn: "नणलङञ", ss: "सशषज़", rr: "र", ch: "चछजझ",
+    matras: "ािीुूृेैोौंँः", virama: "्",
+  };
+  const isDevConsonant = (ch) => {
+    const code = ch.codePointAt(0);
+    return (code >= 0x0915 && code <= 0x0939) || (code >= 0x0958 && code <= 0x095f);
+  };
+
+  function visemeFor(ch, next) {
+    if (!ch || /[\s.,!?।;:\-—()"']/.test(ch)) return null;
+    const c = ch.toLowerCase();
+    const n = (next || "").toLowerCase();
+    if (DEV.labial.includes(ch)) return "PP";
+    if (DEV.v.includes(ch)) return "FF";
+    if (DEV.a.includes(ch)) return "A";
+    if (DEV.i.includes(ch)) return "I";
+    if (DEV.u.includes(ch)) return "U";
+    if (DEV.e.includes(ch)) return "E";
+    if (DEV.o.includes(ch)) return "O";
+    if (DEV.nasal.includes(ch)) return "NN";
+    if (ch === DEV.virama) return null;
+    if (isDevConsonant(ch)) {
+      // A Hindi consonant with no vowel sign after it carries the inherent "a" sound.
+      const followedBySign = next && (DEV.matras.includes(next) || next === DEV.virama);
+      if (!followedBySign) return "A";
+      if (DEV.dd.includes(ch)) return "DD";
+      if (DEV.nn.includes(ch)) return "NN";
+      if (DEV.ss.includes(ch)) return "SS";
+      if (DEV.rr.includes(ch)) return "RR";
+      if (DEV.ch.includes(ch)) return "CH";
+      return "KK";
+    }
+    if (c === "t" && n === "h") return "TH";
+    if ((c === "c" || c === "s") && n === "h") return "CH";
+    if (c === "a") return "A";
+    if (c === "e") return "E";
+    if ("iy".includes(c)) return "I";
+    if (c === "o") return "O";
+    if ("uw".includes(c)) return "U";
+    if ("bmp".includes(c)) return "PP";
+    if ("fv".includes(c)) return "FF";
+    if ("td".includes(c)) return "DD";
+    if ("nl".includes(c)) return "NN";
+    if ("szcx".includes(c)) return "SS";
+    if (c === "r") return "RR";
+    if (c === "j") return "CH";
+    if ("gkqh".includes(c)) return "KK";
+    return null;
+  }
+
+  // Where the voice is in the current sentence. Word-boundary events resync it;
+  // between them (or for voices that send none) we advance at the measured speaking rate.
+  const charsPerSecond = { en: 14, hi: 11 };
+  let speech = null;
+  let speaking = false;
+
+  // Target mouth weights: the current sound, blending into the next one (coarticulation).
+  function currentMouth(now) {
+    const weights = {};
+    if (!speech) return weights;
+    const pos = speech.syncChar + ((now - speech.syncTime) / 1000) * charsPerSecond[speech.lang];
+    const i = Math.floor(pos);
+    if (i >= speech.text.length) return weights;
+    const frac = pos - i;
+    const cur = visemeFor(speech.text[i], speech.text[i + 1]);
+    const next = visemeFor(speech.text[i + 1], speech.text[i + 2]);
+    if (cur) weights[VISEME_OF[cur]] = VISEME_GAIN[cur] * (1 - 0.4 * frac);
+    if (next) weights[VISEME_OF[next]] = (weights[VISEME_OF[next]] || 0) + VISEME_GAIN[next] * 0.4 * frac;
+    return weights;
+  }
+
+  // ================= reading the meaning of what she says =================
+  const CUES = {
+    greeting: /\b(hello|hi|hey|welcome|namaste|good (morning|afternoon|evening))\b|नमस्ते|स्वागत/i,
+    thanks: /\b(thank|thanks|pleasure|glad to help)\b|धन्यवाद|शुक्रिया/i,
+    positive: /\b(yes|yeah|sure|of course|can|allowed|eligible|entitled|happy|glad|great|good news|free|paid|approved|available|benefit|congrat)/i,
+    positiveHi: /हाँ|हां|बिल्कुल|ज़रूर|सकते|सकती|मिलती|मिलेगी|मिलते|खुशी|अच्छी|बधाई/,
+    apology: /\b(sorry|apolog|unfortunately|unable|unavailable|couldn't|can't reach)\b|माफ़|माफ|क्षमा|खेद|दुर्भाग्य/i,
+    notFound: /not found|don't have|do not have|no information|not (mentioned|specified|sure)|unclear|depends|नहीं मिला|जानकारी नहीं|स्पष्ट नहीं/i,
+    rule: /\b(not|no|never|cannot|can't|only|must|required|mandatory|need to|should|deadline|before|maximum|minimum|limit|approval)\b|नहीं|केवल|सिर्फ|ज़रूरी|जरूरी|अनिवार्य|अनुमति/i,
+    wow: /\b(amazing|wonderful|excellent|fantastic|awesome|wow)\b|शानदार|बहुत बढ़िया|वाह/i,
+    emphasis: /\d|\b(very|important|all|every|always|strictly|exactly)\b|बहुत|सभी|हमेशा|महत्वपूर्ण/i,
+    number: /\d|\b(one|two|three|four|five|six|seven|eight|nine|ten|twelve|fifteen|twenty|thirty|sixty)\b|एक|दो|तीन|चार|पाँच|पांच|छह|सात|आठ|नौ|दस/i,
+    remember: /\b(last time|earlier|previously|you (told|mentioned|asked|said)|as i (recall|remember)|i remember)\b|पिछली बार|याद|पहले आपने/i,
+    unsure: /\b(not sure|it depends|depends on|unclear|i think)\b|शायद|निर्भर/i,
+    steps: /\b(first|second|then|next|finally|step)\b|फिर|उसके बाद|अंत में/i,
+  };
+
+  // Voice speed and pitch for each feeling (1 = normal).
+  const TONE = { normal: { rate: 1, pitch: 1 }, happy: { rate: 1.05, pitch: 1.08 }, soft: { rate: 0.94, pitch: 0.96 }, calm: { rate: 0.97, pitch: 1 } };
+
+  // Pick an expression, gesture, head energy (1 = normal) and voice tone for one sentence.
+  function reactTo(sentence, index) {
+    const s = sentence;
+    if (CUES.greeting.test(s)) return { expr: { enthusiastic: 0.8, bigSmile: 0.5 }, gesture: "wave", ms: 1800, energy: 1.6, tone: TONE.happy };
+    if (CUES.thanks.test(s)) return { expr: { bigSmile: 0.9 }, gesture: "heart", ms: 1600, energy: 1.3, tone: TONE.happy };
+    if (CUES.remember.test(s)) return { expr: { remembering: 0.8, smile: 0.3 }, gesture: "rest", energy: 0.6, tone: TONE.calm, recall: true };
+    if (CUES.wow.test(s)) return { expr: { enthusiastic: 0.9, laugh: 0.3 }, gesture: "explain", energy: 1.7, tone: TONE.happy };
+    if (CUES.notFound.test(s) || CUES.unsure.test(s)) return { expr: { confused: 0.8, empathy: 0.3 }, gesture: "shrug", ms: 1600, energy: 0.8, tone: TONE.soft, unsure: true };
+    if (CUES.apology.test(s)) return { expr: { empathy: 0.9 }, gesture: "shrug", ms: 1400, energy: 0.6, tone: TONE.soft };
+    if (/[?？]\s*$/.test(s)) return { expr: { curious: 0.9 }, gesture: "explainOne", energy: 1.1, tone: TONE.normal };
+    const positive = CUES.positive.test(s) || CUES.positiveHi.test(s);
+    const rule = CUES.rule.test(s);
+    const focus = rule || CUES.number.test(s) || CUES.steps.test(s);
+    const gesture = CUES.number.test(s) ? "count" : index % 2 ? "explainOne" : "explain";
+    if (positive && !rule) return { expr: { enthusiastic: index === 0 ? 0.7 : 0.4, smile: 0.4 }, gesture, energy: index === 0 ? 1.5 : 1.2, tone: TONE.happy };
+    if (rule && positive) return { expr: { confident: 0.6, focused: 0.3, smile: 0.2 }, gesture, energy: 0.9, tone: TONE.normal };
+    if (focus) return { expr: { focused: 0.7, serious: 0.2 }, gesture, energy: 0.7, tone: TONE.calm };
+    return { expr: { smile: 0.75 }, gesture, energy: 1, tone: TONE.normal };
+  }
+
+  // Expression + gesture for each assistant state.
+  const STATES = {
+    idle:      { expr: { smile: 0.85 }, head: { x: 0, y: 0, z: 0 }, look: null, gesture: "rest" },
+    listening: { expr: { curious: 0.7, smile: 0.5 }, head: { x: -0.03, y: 0, z: 0.08 }, look: null, gesture: "rest" },
+    thinking:  { expr: { thinking: 1 }, head: { x: -0.06, y: 0.08, z: -0.06 }, look: { x: 0.3, y: 0.25 }, gesture: "thinking" },
+    speaking:  { expr: { smile: 0.6 }, head: { x: 0, y: 0, z: 0 }, look: null, gesture: "explain" },
+    concerned: { expr: { worried: 0.9 }, head: { x: 0.04, y: 0, z: 0.04 }, look: null, gesture: "shrug" },
+    searching: { expr: { serious: 0.45, curious: 0.35 }, head: { x: 0.07, y: 0, z: 0 }, look: { x: 0, y: -0.3 }, gesture: "rest" },
+    checking:  { expr: { thinking: 0.6, serious: 0.3 }, head: { x: -0.03, y: -0.06, z: 0.04 }, look: { x: -0.2, y: 0.1 }, gesture: "rest" },
+    remembering: { expr: { remembering: 0.9 }, head: { x: -0.05, y: -0.08, z: 0.05 }, look: { x: -0.3, y: 0.3 }, gesture: "rest" },
+  };
+  // What she says while each brain step runs: [English, Hindi, face state]
+  const STEP_TEXT = {
+    remember: ["Remembering our last chat…", "पिछली बातचीत याद कर रही हूँ…", "remembering"],
+    search:  ["Searching the documents…", "दस्तावेज़ खोज रही हूँ…", "searching"],
+    weather: ["Checking the weather…", "मौसम देख रही हूँ…", "searching"],
+    leads:   ["Looking at your leads…", "आपके leads देख रही हूँ…", "searching"],
+    check:   ["Checking the answer…", "जवाब जाँच रही हूँ…", "checking"],
+    retry:   ["Looking again…", "फिर से देख रही हूँ…", "searching"],
+  };
+
+  let browFlashAt = -10;
+  let glanceUntil = 0;
+  let glanceAway = { x: 0, y: 0 };
+  let nodAt = -10;
+  let shakeAt = -10;
+  let energy = 1;          // how lively her head is for the current sentence
+  let beatAt = -10;        // time of the last spoken word (for the small head beat)
+  let slowShakeAt = -10;   // start of a slow "hmm, not sure" head shake
+  let talkNod = { at: -10, dur: 0.5, amp: 0, double: false };  // the current speaking nod
+  let nextTalkNodAt = 0;   // when the next natural nod is due
+  let sentenceTilt = { y: 0, z: 0 };  // small head turn/tilt that changes per sentence
+  const rand = (a, b) => a + Math.random() * (b - a);
+  function startNod(amp, dur = 0.5, double = false) {
+    if (clock.elapsedTime - talkNod.at < talkNod.dur) return;  // finish the current nod first
+    talkNod = { at: clock.elapsedTime, dur, amp, double };
+  }
+  const AGREE = /^(yes|yeah|sure|okay|ok|absolutely|definitely|हाँ|हां|जी|बिल्कुल|ज़रूर|जरूर)$/i;
+
+  // ================= gaze, blinking =================
+  let gazeTarget = { x: 0, y: 0 };
+  const gazeNow = { x: 0, y: 0 };
+  let lastPointerAt = 0;
+
+  document.addEventListener("pointermove", (e) => {
+    const r = canvas.getBoundingClientRect();
+    gazeTarget = {
+      x: Math.max(-1, Math.min(1, (e.clientX - (r.left + r.width / 2)) / r.width)) * 0.5,
+      y: Math.max(-1, Math.min(1, -(e.clientY - (r.top + r.height * 0.3)) / r.height)) * 0.35,
+    };
+    lastPointerAt = performance.now();
+  });
+
+  (function glanceLoop() {
+    if (mood === "idle" && performance.now() - lastPointerAt > 2500) {
+      gazeTarget = { x: (Math.random() - 0.5) * 0.4, y: (Math.random() - 0.5) * 0.2 };
+      setTimeout(() => {
+        if (performance.now() - lastPointerAt > 2500) gazeTarget = { x: 0, y: 0 };
+      }, 1100);
+    }
+    setTimeout(glanceLoop, 3000 + Math.random() * 4000);
+  })();
+
+  let nextBlinkAt = 1.5;
+  let blinkStart = -1;
+  let doubleBlink = false;
+
+  function blinkWeight(t) {
+    if (t >= nextBlinkAt && blinkStart < 0) {
+      blinkStart = t;
+      doubleBlink = Math.random() < 0.2;
+    }
+    if (blinkStart < 0) return 0;
+    const length = doubleBlink ? 0.42 : 0.16;
+    const p = (t - blinkStart) / length;
+    if (p >= 1) {
+      blinkStart = -1;
+      nextBlinkAt = t + 2 + Math.random() * 4;
+      return 0;
+    }
+    const phase = doubleBlink ? (p * 2) % 1 : p;
+    return Math.sin(phase * Math.PI);
+  }
+
+  const BAR_COUNT = 28;
+  const bars = [];
+  for (let i = 0; i < BAR_COUNT; i++) {
+    const bar = document.createElement("span");
+    $("wave").appendChild(bar);
+    bars.push(bar);
+  }
+
+  // ================= main loop =================
+  const clock = new THREE.Clock();
+  const ease = (from, to, k) => from + (to - from) * k;
+  const mouthNow = {};
+  const headNow = { x: 0, y: 0, z: 0 };
+
+  function tick() {
+    const dt = Math.min(clock.getDelta(), 0.1);
+    const t = clock.elapsedTime;
+    const now = performance.now();
+    const st = STATES[mood] || STATES.idle;
+
+    // timed expressions / gestures fall back to the current state
+    if (exprHoldUntil && now > exprHoldUntil) {
+      exprHoldUntil = 0;
+      exprTarget = speaking ? exprTarget : st.expr;
+    }
+    if (gestureUntil && now > gestureUntil) {
+      gestureUntil = 0;
+      gestureName = gestureAfter;
+    }
+
+    // mouth
+    const mouthGoal = speaking ? currentMouth(now) : {};
+    for (const name of Object.values(VISEME_OF)) {
+      mouthNow[name] = ease(mouthNow[name] || 0, mouthGoal[name] || 0, 0.25);
+    }
+    const openness = Math.min(1, 1.5 * ((mouthNow.viseme_aa || 0) + (mouthNow.viseme_O || 0) * 0.8 +
+      (mouthNow.viseme_E || 0) * 0.6 + (mouthNow.viseme_U || 0) * 0.5 + (mouthNow.viseme_I || 0) * 0.5 +
+      (mouthNow.viseme_DD || 0) * 0.4 + (mouthNow.viseme_kk || 0) * 0.4 + (mouthNow.viseme_CH || 0) * 0.4));
+
+    // expressions blend slowly, like real faces
+    for (const n of EXPR_NAMES) exprNow[n] = ease(exprNow[n], exprTarget[n] || 0, 0.06);
+    const face = {};
+    for (const n of EXPR_NAMES) {
+      if (exprNow[n] < 0.005) continue;
+      for (const [k, w] of Object.entries(EXPRESSIONS[n])) face[k] = (face[k] || 0) + w * exprNow[n];
+    }
+    // brows lift briefly on numbers and emphasised words
+    const flash = Math.max(0, 1 - (t - browFlashAt) / 0.5);
+    face.browInnerUp = (face.browInnerUp || 0) + flash * 0.3;
+    face.browOuterUpLeft = (face.browOuterUpLeft || 0) + flash * 0.3;
+    face.browOuterUpRight = (face.browOuterUpRight || 0) + flash * 0.3;
+    // the mouth shapes for speech win over a wide smile, but the smile stays in the eyes
+    if (speaking) {
+      for (const k of ["mouthSmileLeft", "mouthSmileRight", "HB_07_MouthSmile", "AU_12_LipCornerPuller"]) face[k] = (face[k] || 0) * 0.65;
+      if (face.jawOpen) face.jawOpen *= 0.3;
+    }
+    Object.assign(face, mouthNow);
+
+    // gaze: eye contact, short natural glances away while talking
+    const look = st.look || (now < glanceUntil ? glanceAway : gazeTarget);
+    gazeNow.x = ease(gazeNow.x, look.x, 0.12);
+    gazeNow.y = ease(gazeNow.y, look.y, 0.12);
+
+    // head: state pose + expression pose + idle sway + nods + shakes
+    let hx = st.head.x, hy = st.head.y, hz = st.head.z;
+    for (const [n, pose] of Object.entries(EXPR_HEAD)) {
+      hx += pose.x * exprNow[n]; hy += pose.y * exprNow[n]; hz += pose.z * exprNow[n];
+    }
+    const nod = t - nodAt < 0.45 ? Math.sin(((t - nodAt) / 0.45) * Math.PI) * 0.05 : 0;
+    const emphasisNod = flash > 0 ? Math.sin(flash * Math.PI) * 0.02 : 0;
+    const shake = t - shakeAt < 0.6 ? Math.sin((t - shakeAt) * 28) * 0.07 * (1 - (t - shakeAt) / 0.6) : 0;
+    const laughBob = exprNow.laugh * Math.sin(t * 14) * 0.015;
+    const lively = speaking ? energy : 1;
+    const beat = speaking && t - beatAt < 0.22 ? Math.sin(((t - beatAt) / 0.22) * Math.PI) * 0.012 * lively : 0;
+    const slowShake = t - slowShakeAt < 1.2 ? Math.sin((t - slowShakeAt) * 9) * 0.035 * (1 - (t - slowShakeAt) / 1.2) : 0;
+    // natural nods while talking: irregular timing and size, livelier when she is excited
+    if (speaking && t > nextTalkNodAt) {
+      startNod(rand(0.022, 0.045) * lively, rand(0.45, 0.7));
+      nextTalkNodAt = t + rand(1.1, 2.5) / Math.max(0.6, lively);
+    }
+    const p = (t - talkNod.at) / talkNod.dur;
+    const talkNodNow = p >= 0 && p < 1
+      ? talkNod.amp * (talkNod.double ? Math.abs(Math.sin(p * Math.PI * 2)) : Math.sin(p * Math.PI))
+      : 0;
+    const tiltY = speaking ? sentenceTilt.y : 0;
+    const tiltZ = speaking ? sentenceTilt.z : 0;
+    headNow.x = ease(headNow.x, hx + Math.sin(t * 0.7) * 0.012 * lively + nod * lively + emphasisNod + laughBob + beat + talkNodNow, 0.1);
+    headNow.y = ease(headNow.y, hy + gazeNow.x * 0.25 + Math.sin(t * 0.45) * 0.02 * lively + shake + slowShake + tiltY, 0.1);
+    headNow.z = ease(headNow.z, hz + Math.sin(t * 0.55) * 0.012 * lively + tiltZ, 0.1);
+
+    if (rig) {
+      const gesture = (GESTURES[gestureName] || GESTURES.rest)(t);
+      rig.apply({
+        mouth: mouthNow,
+        face: faceOverride || face,
+        expr: exprNow,
+        blink: faceOverride ? 0 : blinkWeight(t),
+        gaze: gazeNow,
+        head: headNow,
+        breath: Math.sin(t * 1.6),
+        arms: GESTURES.rest(t),
+      });
+      rig.update(dt);
+    }
+    renderer.render(scene, camera);
+
+    for (let i = 0; i < BAR_COUNT; i++) {
+      const wobble = 0.5 + 0.5 * Math.sin(now / 95 + i * 0.75) * Math.sin(now / 160 + i * 1.3);
+      let h;
+      if (speaking) h = 3 + openness * 22 * wobble;
+      else if (mood === "listening") h = 3 + 8 * Math.abs(Math.sin(now / 180 + i * 0.5));
+      else if (mood === "thinking") h = 3 + 4 * Math.abs(Math.sin(now / 120 - i * 0.4));
+      else h = 2.5 + 1.2 * (0.5 + 0.5 * Math.sin(now / 700 + i * 0.6));
+      bars[i].style.height = h.toFixed(1) + "px";
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
+  let onStateChange = () => {};  // set by the mic code: re-check whether to listen
+  function setState(state, text) {
+    document.body.className = state;
+    $("status").textContent = text;
+    mood = state;
+    const st = STATES[state] || STATES.idle;
+    if (!exprHoldUntil) exprTarget = st.expr;
+    if (!gestureUntil) gestureName = st.gesture;
+    onStateChange();
+  }
+
+  // Test hooks, e.g. aria.mouthTest("Hello there"), aria.express("confused"), aria.gesture("wave")
+  window.aria = {
+    setState,
+    mouthTest(text, lang = isHindi(text) ? "hi" : "en") {
+      const r = reactTo(text, 0);
+      setExpression(r.expr);
+      setGesture(r.gesture);
+      speaking = true;
+      speech = { text, lang, syncChar: 0, syncTime: performance.now() };
+      setTimeout(() => { speaking = false; speech = null; }, (text.length / charsPerSecond[lang]) * 1000 + 300);
+    },
+    express(name, weight = 1) { setExpression({ [name]: weight }); },
+    freeze(shapes) { faceOverride = shapes; },
+    gesture(name) { setGesture(name); },
+    expressions: EXPR_NAMES,
+    gestures: Object.keys(GESTURES),
+    get ready() { return Boolean(rig); },
+    debug() { return rig?.info?.(); },
+  };
+
+  // ================= speaking (natural voices; Edge has the most human ones) =================
+  const synth = window.speechSynthesis;
+  const FEMALE = /female|neerja|heera|swara|kalpana|ananya|aria|jenny|zira|samantha|google हिन्दी|google uk english female/i;
+  const NATURAL = /natural|neural|online/i;
+
+  function pickVoice(lang) {
+    const voices = synth.getVoices().filter((v) => (lang === "hi" ? /^hi/i : /^en/i).test(v.lang));
+    const score = (v) =>
+      (NATURAL.test(v.name) ? 4 : 0) + (FEMALE.test(v.name) ? 2 : 0) + (/-IN$/i.test(v.lang) ? 1 : 0);
+    return voices.sort((a, b) => score(b) - score(a))[0] || null;
+  }
+
+  function checkVoices() {
+    if (!synth) return;
+    const natural = synth.getVoices().some((v) => NATURAL.test(v.name));
+    if (synth.getVoices().length && !natural) {
+      $("hint").textContent = "For a natural human voice, open this page in Microsoft Edge";
+    }
+  }
+  if (synth) {
+    checkVoices();
+    synth.onvoiceschanged = checkVoices;
+  }
+
+  function toSpeech(text) {
+    return text
+      .replace(/\(source:[^)]*\)/gi, "")
+      .replace(/https?:\/\/\S+/g, "")
+      .replace(/[*#_`]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function setSpeaking(on) {
+    speaking = on;
+    if (!on) speech = null;
+  }
+
+  function finishSpeaking() {
+    setSpeaking(false);
+    exprHoldUntil = 0;
+    gestureUntil = 0;
+    if (!busy) setState("idle", idleText());
+  }
+
+  function stopSpeaking() {
+    if (synth) synth.cancel();
+    finishSpeaking();
+  }
+
+  function speak(text, speakMood = "speaking") {
+    const sentences = toSpeech(text).match(/[^.!?।]+[.!?।]*/g) || [];
+    if (!synth || sentences.length === 0) {
+      finishSpeaking();
+      return;
+    }
+    const lang = isHindi(text) ? "hi" : "en";
+    const voice = pickVoice(lang);
+    if (lang === "hi" && !voice) {
+      $("hint").textContent = "No Hindi voice found · open this page in Microsoft Edge (voice: Swara)";
+    }
+    synth.cancel();
+
+    // One utterance per sentence: Chrome cuts off long single utterances.
+    sentences.forEach((sentence, i) => {
+      const text = sentence.trim();
+      const u = new SpeechSynthesisUtterance(text);
+      if (voice) u.voice = voice;
+      u.lang = voice ? voice.lang : lang === "hi" ? "hi-IN" : "en-IN";
+      const r = speakMood === "concerned"
+        ? { expr: { worried: 0.8 }, gesture: "shrug", ms: 1400, energy: 0.6, tone: TONE.soft }
+        : reactTo(text, i);
+      u.rate = r.tone.rate;
+      u.pitch = r.tone.pitch;
+      let startedAt = 0;
+
+      u.onstart = () => {
+        startedAt = performance.now();
+        speech = { text, lang, syncChar: 0, syncTime: startedAt };
+        if (!speaking) {
+          setSpeaking(true);
+          setState(speakMood, lang === "hi" ? "बोल रही हूँ… (रोकने के लिए मुझ पर क्लिक करें)" : "Speaking… (click me to stop)");
+        }
+        // face + hands follow the meaning of this sentence
+        setExpression(r.expr);
+        setGesture(r.gesture, r.ms || 0, i % 2 ? "explainOne" : "explain");
+        nodAt = clock.elapsedTime;
+        energy = r.energy;
+        sentenceTilt = { y: rand(-0.035, 0.035), z: rand(-0.03, 0.03) };
+        if (r.unsure) slowShakeAt = clock.elapsedTime;
+        if (blinkStart < 0) nextBlinkAt = clock.elapsedTime;
+        if (r.recall) {
+          glanceAway = { x: -0.3, y: 0.3 };            // eyes up and to the side, recalling
+          glanceUntil = performance.now() + 900;
+        } else if (i > 0 && Math.random() < 0.35) {
+          glanceAway = { x: (Math.random() < 0.5 ? -1 : 1) * 0.12, y: 0.08 };
+          glanceUntil = performance.now() + 450;
+        }
+      };
+      u.onboundary = (e) => {
+        if (speech && e.name !== "sentence") {
+          beatAt = clock.elapsedTime;                    // small head beat on every word
+          speech.syncChar = e.charIndex;
+          speech.syncTime = performance.now();
+          const word = text.slice(e.charIndex, e.charIndex + (e.charLength || 12)).split(/\s/)[0];
+          if (CUES.emphasis.test(word)) browFlashAt = clock.elapsedTime;
+          const clean = word.replace(/[.,!?।]/g, "");
+          if (AGREE.test(clean)) startNod(0.05 * energy, 0.9, true);              // "yes yes" double nod
+          else if (CUES.emphasis.test(word) || /,$/.test(word)) startNod(rand(0.03, 0.045) * energy, rand(0.4, 0.55));
+        }
+      };
+      u.onend = () => {
+        // Learn this voice's real speed so the mouth stays in sync on the next sentence.
+        const seconds = (performance.now() - startedAt) / 1000;
+        if (seconds > 0.5 && text.length > 10) {
+          charsPerSecond[lang] = 0.7 * charsPerSecond[lang] + 0.3 * (text.length / seconds);
+        }
+        if (i === sentences.length - 1) finishSpeaking();
+      };
+      if (i === sentences.length - 1) u.onerror = finishSpeaking;
+      synth.speak(u);
+    });
+  }
+
+  $("face").addEventListener("click", () => {
+    if (speaking) stopSpeaking();
+    else { setExpression({ laugh: 0.7 }, 1200); }
+  });
+
+  // ================= chat =================
+  function addMessage(role, text, isError = false) {
+    $("empty")?.remove();
+    const div = document.createElement("div");
+    div.className = `msg ${role}` + (isError ? " error" : "");
+    div.lang = isHindi(text) ? "hi" : "en";
+
+    const sources = [...text.matchAll(/\(source:\s*([^)]*)\)/gi)].map((m) => m[1].trim());
+    const body = text.replace(/\(source:[^)]*\)/gi, "").trim();
+    div.innerHTML = escapeHtml(body)
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/https?:\/\/[^\s<]*[^\s<.,;:!?)]/g, (url) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`)
+      .replace(/\n/g, "<br>");
+
+    if (sources.length) {
+      const chips = document.createElement("div");
+      chips.className = "sources";
+      for (const s of sources) {
+        const chip = document.createElement("span");
+        chip.className = "chip";
+        chip.textContent = "📄 " + s;
+        chips.appendChild(chip);
+      }
+      div.appendChild(chips);
+    }
+    $("chat").appendChild(div);
+    $("chat").scrollTop = $("chat").scrollHeight;
+  }
+
+  async function ask(text) {
+    text = text.trim();
+    if (busy || !text || !userId) return;
+    busy = true;
+    $("send").disabled = true;
+    if (synth) synth.cancel();
+    setSpeaking(false);
+
+    addMessage("user", text);
+    setState("thinking", isHindi(text) ? "सोच रही हूँ…" : "Thinking…");
+
+    let answer;
+    let failed = false;
+    try {
+      const res = await fetch("/ask/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, session_id: sessionId, user_id: userId }),
+      });
+      // The server sends one JSON line per step; update her face as each one arrives.
+      const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+      let buffer = "";
+      let data = null;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += value;
+        const lines = buffer.split("\n");
+        buffer = lines.pop(); // keep a half-received line for next time
+        for (const line of lines.filter((l) => l.trim())) {
+          const event = JSON.parse(line);
+          if (event.type === "step") {
+            const [en, hi, state] = STEP_TEXT[event.step] || STEP_TEXT.check;
+            setState(state, isHindi(text) ? hi : en);
+          } else if (event.type === "answer") {
+            data = event;
+          }
+        }
+      }
+      if (!data) throw new Error("No answer received");
+      sessionId = data.session_id;
+      failed = Boolean(data.error);
+      answer = data.answer || "Sorry, I don't have an answer for that.";
+    } catch (e) {
+      failed = true;
+      answer = "I can't reach the server. Please check that it is running.";
+    } finally {
+      busy = false;
+      $("send").disabled = false;
+    }
+
+    addMessage("bot", answer, failed);
+    if (failed) {
+      setState("concerned", "Something went wrong");
+      shakeAt = clock.elapsedTime;
+    } else {
+      setExpression({ bigSmile: 0.9 }, 700);
+    }
+    speak(answer, failed ? "concerned" : "speaking");
+  }
+
+  $("form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const q = $("input").value;
+    $("input").value = "";
+    ask(q);
+  });
+
+  // ================= language switch =================
+  for (const btn of document.querySelectorAll(".langs button")) {
+    btn.addEventListener("click", () => {
+      micLang = btn.dataset.lang;
+      for (const b of document.querySelectorAll(".langs button")) b.classList.toggle("active", b === btn);
+      $("input").placeholder = TEXTS[micLang].placeholder;
+      if (mood === "idle") $("status").textContent = idleText();
+    });
+  }
+
+  // ================= who is talking (memory per person) =================
+  let userId = null;
+
+  function greetingFor(name, data) {
+    const topic = data.facts.last_topic;
+    if (!data.returning) return `Nice to meet you, ${name}! I'm Aria. Ask me anything about company policies.`;
+    if (data.facts.language === "Hindi") {
+      return `फिर से स्वागत है, ${name}!` + (topic ? ` पिछली बार हमने ${topic} के बारे में बात की थी।` : "") + " आज मैं आपकी क्या मदद करूँ?";
+    }
+    return `Welcome back, ${name}!` + (topic ? ` Last time we talked about ${topic}.` : "") + " How can I help today?";
+  }
+
+  async function start(name) {
+    name = name.trim();
+    if (!name) return;
+    try {
+      const res = await fetch("/hello", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json();
+      userId = data.user_id;
+      const shownName = data.facts.name || name;
+      try { localStorage.setItem("aria.name", shownName); } catch {}
+      if (data.facts.language === "Hindi") document.querySelector('.langs button[data-lang="hi-IN"]').click();
+      $("nameForm").hidden = true;
+      $("form").hidden = false;
+      $("switchUser").hidden = false;
+      $("input").focus();
+      const greeting = greetingFor(shownName, data);
+      addMessage("bot", greeting);
+      setExpression({ bigSmile: 1 }, 1500);
+      speak(greeting);
+    } catch (e) {
+      $("hint").textContent = "I can't reach the server. Please check that it is running.";
+    }
+  }
+
+  $("nameForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    start($("nameInput").value);
+  });
+  try { $("nameInput").value = localStorage.getItem("aria.name") || ""; } catch {}
+
+  $("switchUser").addEventListener("click", (e) => {
+    e.preventDefault();
+    userId = null;
+    sessionId = null;
+    try { localStorage.removeItem("aria.name"); } catch {}
+    $("chat").innerHTML = "";
+    $("nameInput").value = "";
+    $("form").hidden = true;
+    $("switchUser").hidden = true;
+    $("nameForm").hidden = false;
+    $("nameInput").focus();
+  });
+
+  // ================= listening (speech-to-text, Hindi + English) =================
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    $("mic").disabled = true;
+    $("mic").title = "Voice input needs Edge or Chrome";
+    $("hint").textContent = "Voice input needs Edge or Chrome · you can still type your question";
+  } else {
+    const rec = new SpeechRecognition();
+    rec.continuous = true;      // keep listening across sentences
+    rec.interimResults = true;  // get words while the user is still talking
+    let micOn = true;           // 🎤 button: on = always listening, off = muted
+    let listening = false;
+    let lastNod = 0;
+    let retryMs = 300;
+
+    // Listen only when it makes sense: mic on, user started, and Aria is not thinking or talking.
+    function syncMic() {
+      const shouldListen = micOn && userId && !busy && !speaking;
+      if (shouldListen && !listening) {
+        rec.lang = micLang;
+        try { rec.start(); } catch {}  // throws if it is already starting
+      } else if (!shouldListen && listening) {
+        rec.abort();
+      }
+      $("mic").classList.toggle("on", micOn);
+      $("mic").title = micOn ? "Listening · click to mute" : "Muted · click to listen";
+    }
+    onStateChange = syncMic;
+
+    rec.onstart = () => {
+      listening = true;
+      retryMs = 300;
+      if (!busy && !speaking) setState("listening", micLang === "hi-IN" ? "सुन रही हूँ… बस बोलिए" : "Listening… just speak");
+    };
+    rec.onresult = (e) => {
+      let interim = "";
+      let finalText = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) finalText += e.results[i][0].transcript;
+        else interim += e.results[i][0].transcript;
+      }
+      $("input").value = interim || finalText;
+      // Nod now and then while the user is talking ("mm-hmm, I'm listening").
+      const now = clock.elapsedTime;
+      if (interim && now - lastNod > 1.2) {
+        nodAt = now;
+        lastNod = now;
+        setExpression({ curious: 0.6, smile: 0.4 }, 1200);
+      }
+      // A finished sentence: answer it.
+      if (finalText.trim() && !busy && !speaking) {
+        $("input").value = "";
+        ask(finalText);
+      }
+    };
+    rec.onerror = (e) => {
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+        micOn = false;
+        $("hint").textContent = "Microphone permission was denied · allow it in the address bar, then click 🎤";
+      } else if (e.error !== "no-speech" && e.error !== "aborted") {
+        retryMs = Math.min(retryMs * 2, 5000);  // network trouble: wait longer before retrying
+      }
+    };
+    rec.onend = () => {
+      listening = false;
+      // Browsers stop listening after silence or errors: start again if we should still listen.
+      setTimeout(syncMic, retryMs);
+    };
+
+    $("mic").addEventListener("click", () => {
+      micOn = !micOn;
+      if (micOn) stopSpeaking();
+      syncMic();
+      if (!micOn && !busy && !speaking) setState("idle", idleText());
+    });
+
+    // Switching English / हिन्दी restarts the mic in the new language.
+    for (const btn of document.querySelectorAll(".langs button")) {
+      btn.addEventListener("click", () => { if (listening) rec.abort(); });
+    }
+  }
+</script>
+</body>
+</html>

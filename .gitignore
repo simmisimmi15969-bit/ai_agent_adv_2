@@ -1,0 +1,24 @@
+# Virtual environments
+.venv/
+.venv-1/
+venv/
+
+# Secrets (API keys)
+.env
+**/.env
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Local databases / runtime data
+*.db
+*.db-shm
+*.db-wal
+*.sqlite3
+rag/chroma_db/
+.adk/
+**/.adk/
+
+# Temp copies
+**/tmp/

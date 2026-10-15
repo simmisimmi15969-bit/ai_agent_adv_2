@@ -1,0 +1,4 @@
+IT Policy
+Laptops are provided to all employees on joining.
+Lost laptops must be reported to IT within 24 hours.
+VPN is mandatory when working from home.
